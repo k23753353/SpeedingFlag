@@ -1,157 +1,152 @@
-# FHE Weight Trend (Zama FHEVM)
+# FHE Speeding Check (Zama FHEVM)
 
-A minimal, privacy-first **“weight tracker without the weight”** built on **Zama’s FHEVM**. Each user submits their weight as an encrypted `euint16`. The contract stores only the encrypted current weight and returns an **encrypted trend** when a new value is submitted:
+A privacy-preserving speed compliance checker powered by **Zama FHEVM**.
+Both **speed** and **limit** are encrypted on the client, sent to the contract, and only a single **flag** is returned:
 
-* `0` = **DOWN** (↓)
-* `1` = **SAME** (→, also used for the first submission)
-* `2` = **UP** (↑)
+* `1` → **Over the limit**
+* `0` → **Within limit**
 
-No raw weights are revealed on-chain. The trend result is made **publicly decryptable** for a simple UI.
+No raw numbers are revealed on-chain. The frontend renders an original, horizontal speedometer UI that visualizes your current inputs; the contract logic remains private.
 
 ---
 
 ## ✨ Features
 
-* **Fully homomorphic flow** using `@fhevm/solidity` (official Zama library only)
-* Private storage of the user’s current weight (`euint16`)
-* On submit: encrypted comparison with previous weight → public trend (0/1/2)
-* Optional functions to let a user decrypt their own current weight (via EIP‑712)
-* Clean, CDN-only frontend using **Zama Relayer SDK** + **ethers v6**
+* **Fully homomorphic flow**: speed & limit are encrypted; contract computes `speed > limit` privately.
+* **Two result modes**:
+
+  * **Private**: result decryptable only by the caller (`userDecrypt` with EIP‑712 signing).
+  * **Public**: result is globally decryptable (`publicDecrypt`).
+* **Original UI**: horizontal gauge with live needle, red limit marker & red danger area beyond limit.
+* **Auto-scaling**: gauge adapts (60/80/100…/300+) so both speed and limit fit nicely.
+* **Verbose console logs**: all important steps tagged as `[UI/n]` (encryption, tx, events, decryption, gauge updates).
+* **No deprecated libs**: uses only the official **`@zama-fhe/relayer-sdk`** (CDN) and the on‑chain FHEVM primitives.
+
+---
+
+## 🧠 Smart Contract (Deployed)
+
+* **Network**: Sepolia
+* **Address**: `0x23Ffbaf9AcF0808E74Ecc75DdCBc151f073f1c43`
+* **Interface (excerpt)**
+
+  * `checkSpeed(bytes32 speedExt, bytes32 limitExt, bytes proof)` → `bytes32 overCt`
+  * `checkSpeedPublic(bytes32 speedExt, bytes32 limitExt, bytes proof)` → `bytes32 overCt`
+  * `event SpeedChecked(address user, bytes32 resultHandle, bool isPublic)`
+
+> Inputs are `euint16`; output is `ebool` (1/0). Only the flag is revealed (privately or publicly).
+
+---
+
+## 📁 Project Layout
+
+```
+frontend/
+  public/
+    index.html   ← open this (served via a static server)
+```
+
+No build step is strictly required; `index.html` loads the Relayer SDK and ethers via CDN.
+
+---
+
+## ⚙️ Requirements
+
+* **Node.js** ≥ 18 (for running a local static server)
+* **Git** (optional, to clone the repo)
+* **MetaMask** in your browser
+* **Sepolia ETH** on your wallet for tx gas
+
+---
+
+## 🚀 Installation & Run (Local)
+
+### Option A — Quick serve (recommended)
+
+```bash
+# From the repo root
+npx serve frontend/public -p 5173 --cors
+# then open http://localhost:5173
+```
+
+Alternative static servers:
+
+```bash
+npx http-server frontend/public -p 5173 --cors
+# or
+python3 -m http.server 5173 -d frontend/public
+```
+
+> The page includes COOP/COEP headers in meta; hosting via a local HTTP server avoids cross‑origin isolation issues.
+
+### Option B — GitHub Pages
+
+Host `/frontend/public` as your site root (or copy `index.html` into the Pages root). No build needed.
+
+---
+
+## 🔧 Configuration
+
+Open `frontend/public/index.html` and adjust the constants if needed:
+
+```js
+const CONTRACT_ADDRESS = "0x23Ffbaf9AcF0808E74Ecc75DdCBc151f073f1c43";
+const KMS_ADDRESS      = "0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC"; // Sepolia KMS
+const RELAYER_URL      = "https://relayer.testnet.zama.cloud";
+const GATEWAY_URL      = "https://gateway.sepolia.zama.ai/";
+```
+
+Other network guards (Sepolia chain id) and ABI are already in place.
+
+---
+
+## 🕹️ Usage
+
+1. **Start** a static server and open the app.
+2. Click **Connect Wallet**. The app auto-guards the Sepolia network.
+3. Enter **Speed** and **Limit** integers (0–65535).
+4. (Optional) Toggle **Publish result**:
+
+   * ON → anyone can decrypt (uses `checkSpeedPublic`).
+   * OFF → only you can decrypt (uses `checkSpeed` + `userDecrypt`).
+5. Click **Check Speed**. Watch the console for `[UI/n]` logs.
+6. Use **Last Result** to re-decrypt the most recent handle.
+
+> The gauge is purely visual for your inputs; only the 1/0 result leaves the browser as FHE ciphertext.
 
 ---
 
 ## 🧱 Tech Stack
 
-* **Solidity** (`@fhevm/solidity`) — encrypted types and FHE operations
-* **Zama Relayer SDK** (browser, via CDN) — encryption, EIP‑712 user decryption, public decryption
-* **ethers v6** — contract calls
-* **Hardhat** (contracts) — compile/deploy
-* Network: **Sepolia**
+* **Solidity** + **Zama FHEVM** (contract side)
+* **Relayer SDK**: `@zama-fhe/relayer-sdk` (CDN: `0.1.2`)
+* **ethers v6** for JSON‑RPC
+* Plain **HTML/CSS/JS**, no build tooling required
 
 ---
 
-## ⚙️ Smart Contract
+## 🛡️ Security & Privacy Notes
 
-Contract: `FHEWeightTrend` (Sepolia)
-
-```txt
-Address: 0xfbe76c2f2944e73816f23947961a0cbc610bf386
-KMS:     0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC
-```
-
-### Key storage & logic
-
-* `mapping(address => euint16) _lastWeight;`
-* `mapping(address => bool) _hasWeight;`
-* On `submitWeight(...)`, the contract compares the new encrypted value to the stored one and emits the trend as ciphertext (publicly decryptable).
-
-### Public interface
-
-* `submitWeight(externalEuint16 weightExt, bytes proof) returns (euint8)` — returns encrypted trend; emits `WeightSubmitted(address user, bytes32 trendHandle)`.
-* `hasWeight(address user) view returns (bool)` — whether the user has ever submitted a weight.
-* `getMyWeightHandle() view returns (bytes32)` — your current weight ciphertext handle (for private decryption via Relayer SDK).
-* `makeMyWeightPublic()` — opt‑in to public decryption of your current weight.
-
-> **FHE rules** followed: no FHE ops in view/pure; proper ACL via `FHE.allowThis`, `FHE.allow`, and public trend via `FHE.makePubliclyDecryptable`.
+* Inputs are encrypted client‑side; the contract receives only ciphertexts.
+* The contract computes `speed > limit` and returns an **encrypted** boolean.
+* Choose between **public** vs **private** decryption paths.
+* No plaintext speed/limit or counts are stored on‑chain.
 
 ---
 
-## 🖥️ Frontend
+## 🧩 Troubleshooting
 
-* Single-page static app (no build needed) under:
-
-```
-frontend/public/index.html
-```
-
-* Uses CDN scripts:
-
-  * `https://cdn.zama.ai/relayer-sdk-js/0.1.2/relayer-sdk-js.js`
-  * `https://cdn.jsdelivr.net/npm/ethers@6.15.0/+esm`
-
-### Hard‑coded frontend constants
-
-Inside `frontend/public/index.html` you’ll see these constants — adjust if you redeploy:
-
-```js
-const CONTRACT_ADDRESS = "0xfbe76c2f2944e73816f23947961a0cbc610bf386";
-const KMS_ADDRESS      = "0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC";
-const RELAYER_URL      = "https://relayer.testnet.zama.cloud";
-const GATEWAY_URL      = "https://gateway.sepolia.zama.ai/";
-```
-
-> The page is served with `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` via meta tags; open it over `http(s)://`, not via `file://`.
+* **MetaMask not found** → install MetaMask and refresh.
+* **Wrong network** → the app prompts Sepolia; confirm the switch.
+* **`KMS contract not found`** → verify `KMS_ADDRESS` for Sepolia.
+* **`Result handle not found in logs`** → ensure the deployed address & ABI match your contract.
+* **`SDK add16 not available`** → use Relayer SDK `>= 0.1.2`.
+* **COOP/COEP / Mixed content warnings** → run via a **local HTTP server**, not `file://`.
 
 ---
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-* Node.js 18+ (for running a dev static server)
-* A browser wallet (MetaMask)
-* Sepolia ETH for gas
-
-### Quick run (static hosting)
-
-Use any static server to serve `frontend/public`:
-
-```bash
-# from repo root
-npx serve frontend/public -l 5173
-# or
-npx http-server frontend/public -p 5173 --cors
-# or
-python3 -m http.server 5173 --directory frontend/public
-```
-
-Open: `http://localhost:5173` and:
-
-1. **Connect Wallet** (the app will switch to Sepolia).
-2. Enter an **integer weight** (`0..65535`).
-3. Click **Submit & Compare** → read the **Trend** (↓ / → / ↑).
-
----
-
-## 🔐 Relayer SDK Notes (frontend)
-
-* Encryption: `relayer.createEncryptedInput(CONTRACT_ADDRESS, user).add16(weight)` → `{ handles, inputProof }`.
-* Submit: `contract.submitWeight(handles[0], inputProof)`.
-* Trend decryption (public): `relayer.publicDecrypt([trendHandle])` → `0|1|2`.
-* (Optional) Private decryption of your weight: `relayer.userDecrypt(...)` with EIP‑712 signature.
-
-**Do not** use deprecated/unsupported packages (e.g. `@fhevm-js/relayer`).
-
----
-
-## 📁 Repo Structure
-
-```
-├─ contracts/
-│  └─ FHEWeightTrend.sol
-├─ frontend/
-│  └─ public/
-│     └─ index.html  # CDN-only SPA
-├─ hardhat.config.ts (or .js)
-└─ README.md
-```
-
----
-
-## 🧪 Local Contract (optional)
-
-If you want to develop the contract yourself:
-
-```bash
-npm i
-npx hardhat compile
-# deploy to Sepolia with your script, then update CONTRACT_ADDRESS in index.html
-```
-
-> Remember: keep using only `@fhevm/solidity/lib/FHE.sol` and configure network via `SepoliaConfig`.
-
 
 ## 📝 License
 
-MIT — feel free to use and adapt.
+MIT — feel free to use and adapt. Please keep the attribution to Zama FHEVM where appropriate.
 
+---

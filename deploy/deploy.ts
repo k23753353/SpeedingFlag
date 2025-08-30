@@ -6,18 +6,18 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
   const { deploy, log, read } = deployments;
   const { deployer } = await getNamedAccounts();
 
-  const res = await deploy("FHEWeightTrend", {
+  const res = await deploy("SpeedingFlag", {
     from: deployer,
     // ⬇️ укажи FQN: путь к файлу и имя контракта
-    contract: "contracts/FHEWeightTrend.sol:FHEWeightTrend",
+    contract: "contracts/SpeedingFlag.sol:SpeedingFlag",
     args: [],
     log: true,
   });
 
-  log(`✅ FHEWeightTrend deployed at: ${res.address}`);
+  log(`✅ SpeedingFlag deployed at: ${res.address}`);
 
   try {
-    const v: string = await read("FHEWeightTrend", "version");
+    const v: string = await read("SpeedingFlag", "version");
     log(`ℹ️ version(): ${v}`);
   } catch (e) {
     log(`(warn) version() read failed: ${(e as Error).message}`);
@@ -25,5 +25,5 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
 };
 
 export default func;
-func.id = "deploy_PrivateProfitDistributor";
-func.tags = ["PrivateProfitDistributor"];
+func.id = "deploy_SpeedingFlag";
+func.tags = ["SpeedingFlag"];
